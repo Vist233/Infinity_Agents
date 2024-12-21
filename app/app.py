@@ -5,6 +5,8 @@ from phi.storage.workflow.sqlite import SqlWorkflowStorage
 import os
 import io
 import zipfile
+from flask_session import Session
+from datetime import timedelta
 
 from config import SECRET_KEY, DATABASE_DIR
 from codeAI import CodeAIWorkflow
@@ -22,21 +24,40 @@ class DialogueManager:
         try:
             if self.assistant == paperai:
                 self.assistant.session_id = f"generate-summary-on-{user_input}"
+                print("开始处理 paperai 响应")
+                
+                # 获取最后一个响应
+                last_response = None
+                for res in self.assistant.run(logs, user_input):
+                    print(f"收到响应: {res}")
+                    last_response = res
+                
+                # 使用最后一个响应
+                if last_response and last_response.event == RunEvent.workflow_completed:
+                    logs.append("Workflow completed.\n")
+                    if hasattr(last_response, 'content') and last_response.content:
+                        response = last_response.content
+                        print(f"设置响应内容: {response}")
+                    else:
+                        print("响应没有内容")
+                        response = "抱歉，处理过程中出现错误。"
+                else:
+                    print("没有收到完整的响应")
+                    response = "抱歉，没有收到有效的响应。"
 
-                for res in self.assistant.run(logs, user_input):
-                    if res.event == RunEvent.workflow_completed:
-                        logs.append("Workflow completed.\n")
-                        response = res.content
             elif self.assistant == codeai:
-                #full_input = f"{conversation_history}\n用户: {user_input}"  # 包含上下文的输入
                 for res in self.assistant.run(logs, user_input):
                     if res.event == RunEvent.workflow_completed:
                         logs.append("Workflow completed.\n")
                         response = res.content
+
         except Exception as e:
-            response = f"处理过程中出错: {e}"
+            error_msg = f"处理过程中出错: {str(e)}"
+            print(f"错误详情: {error_msg}")
+            response = error_msg
             logs.append(f"{response}\n")
 
+        print(f"最终返回响应: {response}")
         return response
 
 app = Flask(__name__)
@@ -82,32 +103,50 @@ codeai = CodeAIWorkflow(
 paperai_manager = DialogueManager(paperai)
 codeai_manager = DialogueManager(codeai)
 
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = os.path.join(parent_dir, 'flask_session')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+Session(app)
+
+# 确保会话目录存在
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     if "messages" not in session:
         session["messages"] = []
-    messages = session["messages"]
+    
+    messages = session.get("messages", [])
 
     if request.method == "POST":
         user_input = request.form.get("userInput")
-        agent = request.form.get("agent")  # 判断是调用 paperai 还是 codeai
+        agent = request.form.get("agent")
+        
         if user_input:
-            # 获取对话上下文
-            conversation_history = "\n".join(
-                f"用户: {msg['text']}" if msg["type"] == "user" else f"AI: {msg['text']}"
-                for msg in messages
-            )
-
             if agent == "paperai":
-                response = paperai_manager.process_user_input(user_input, conversation_history, logs)
+                response = paperai_manager.process_user_input(user_input, "", logs)
             elif agent == "codeai":
-                response = codeai_manager.process_user_input(user_input, conversation_history, logs)
+                response = codeai_manager.process_user_input(user_input, "", logs)
             else:
                 response = "未指定有效的 Agent。"
 
+            print(f"用户输入: {user_input}")  # 调试日志
+            print(f"AI 响应: {response}")     # 调试日志
+            print(f"响应类型: {type(response)}")  # 检查响应类型
+
+            # 添加新消息到会话
             messages.append({"type": "user", "text": user_input})
-            messages.append({"type": "ai", "text": response})
-            session["messages"] = messages
+            messages.append({"type": "ai", "text": str(response)})  # 确保转换为字符串
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                response_data = {
+                    "messages": [
+                        {"type": "user", "text": user_input},
+                        {"type": "ai", "text": str(response)}
+                    ]
+                }
+                print(f"返回的数据: {response_data}")  # 检查返回的数据
+                return response_data
 
     return render_template("main.html", messages=messages, logs=logs)
 
@@ -148,4 +187,16 @@ def download():
     )
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    extra_files = [
+        'templates/',
+        'static/',
+        'app.py'
+    ]
+    
+    app.run(
+        host='0.0.0.0', 
+        port=8080, 
+        debug=True,
+        extra_files=extra_files,  # 只监控这些文件的变化
+        use_reloader=True
+    )

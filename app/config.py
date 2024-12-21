@@ -13,3 +13,8 @@ API_KEY = os.environ.get("YI_API_KEY", "your API key here")
 
 # 确保目录存在
 os.makedirs(DATABASE_DIR, exist_ok=True)
+
+# 添加会话配置
+SESSION_TYPE = 'filesystem'
+SESSION_FILE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'flask_session')
+PERMANENT_SESSION_LIFETIME = 7 * 24 * 60 * 60  # 7天，单位秒

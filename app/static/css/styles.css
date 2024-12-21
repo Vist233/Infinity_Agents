@@ -22,11 +22,14 @@
       overflow-y: auto;
       padding: 15px;
       background-color: #1e1e1e;
+      display: flex;
+      flex-direction: column;
     }
 
     .message {
       display: flex;
       margin-bottom: 15px;
+      width: 100%;
     }
 
     .message.user {
@@ -42,16 +45,19 @@
       padding: 10px 15px;
       border-radius: 20px;
       word-wrap: break-word;
+      white-space: pre-wrap;
+      background-color: #444;
+      color: white;
+      display: inline-block;
+      line-height: 1.4;
     }
 
     .message.user .bubble {
       background-color: #434343;
-      color: white;
     }
 
     .message.ai .bubble {
       background-color: #444;
-      color: white;
     }
 
     .input-area {
@@ -337,4 +343,19 @@
 
     .agent-select option:hover {
       background-color: #444;
+    }
+
+    .send-button:disabled {
+        background-color: #666;
+        cursor: not-allowed;
+    }
+
+    .input-box:disabled {
+        background-color: #555;
+        cursor: not-allowed;
+    }
+
+    .message.loading .bubble {
+        background-color: #333;
+        color: #999;
     }
